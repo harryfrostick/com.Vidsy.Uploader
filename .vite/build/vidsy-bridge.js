@@ -16,7 +16,7 @@ const store = new Store({
   defaults: {
     watchFolder: null,
     floatOnTop: false,
-    windowBounds: { width: 1280, height: 820 }
+    windowBounds: { width: 800, height: 600 }
   }
 });
 let mainWindow = null;
@@ -25,7 +25,7 @@ let watcher = null;
 const VIDSY_BASE = "https://app.vidsy.co";
 const SESSION_PARTITION = "persist:vidsy";
 function extractShortHash(filename) {
-  const match = path.basename(filename).match(/^([A-Z]+)_(\d+)/i);
+  const match = path.basename(filename).match(/([A-Z]+)_(\d+)/i);
   if (!match) return null;
   return {
     brand: match[1].toUpperCase(),
@@ -168,15 +168,14 @@ function stopWatcher() {
     watcher = null;
   }
 }
-const SIDEBAR_WIDTH = 300;
 function layoutBrowserView() {
   if (!mainWindow || !vidsynView) return;
   const [winW, winH] = mainWindow.getContentSize();
   vidsynView.setBounds({
-    x: SIDEBAR_WIDTH,
+    x: 0,
     y: 0,
-    width: winW - SIDEBAR_WIDTH,
-    height: winH
+    width: 0,
+    height: 0
   });
 }
 function createWindow() {
@@ -203,7 +202,7 @@ function createWindow() {
     }
   });
   {
-    mainWindow.loadURL("http://localhost:5173");
+    mainWindow.loadURL("http://localhost:5174");
   }
   vidsynView = new BrowserView({
     webPreferences: {

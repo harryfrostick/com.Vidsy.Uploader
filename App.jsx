@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const bridge = window.vidsyBridge;
+const getBridge = () => window.vidsyBridge;
 
 function clamp(str, max = 28) {
   if (!str) return '';
@@ -158,7 +158,7 @@ export default function App() {
 
   // ── Boot: restore persisted state ──
   useEffect(() => {
-    bridge.getInitialState().then(({ watchFolder: wf, floatOnTop }) => {
+    getBridge().getInitialState().then(({ watchFolder: wf, floatOnTop }) => {
       if (wf) setWatchFolder(wf);
       setFloatOn(floatOnTop);
     });
@@ -167,35 +167,35 @@ export default function App() {
   // ── IPC subscriptions ──
   useEffect(() => {
     const unsubs = [
-      bridge.on('nav-started', ({ file, url, hash }) => {
+      getBridge().on('nav-started', ({ file, url, hash }) => {
         setIsNavigating(true);
         setNavStatus({ hash, url });
         addLog('nav', file ? `Navigating for ${file}` : `Navigating to ${hash}`, url);
       }),
-      bridge.on('nav-complete', ({ url }) => {
+      getBridge().on('nav-complete', ({ url }) => {
         setIsNavigating(false);
         addLog('info', 'Page loaded — running Vibe-Check…', url);
       }),
-      bridge.on('nav-error', ({ file, reason }) => {
+      getBridge().on('nav-error', ({ file, reason }) => {
         setIsNavigating(false);
         addLog('warn', `Skipped: ${file}`, reason);
       }),
-      bridge.on('inject-success', ({ method, file }) => {
+      getBridge().on('inject-success', ({ method, file }) => {
         addLog('success', `Upload injected (${method})`, file);
       }),
-      bridge.on('inject-error', ({ reason }) => {
+      getBridge().on('inject-error', ({ reason }) => {
         addLog('error', 'Auto-upload failed', reason);
       }),
-      bridge.on('watcher-started', ({ folderPath }) => {
+      getBridge().on('watcher-started', ({ folderPath }) => {
         addLog('info', 'Watcher active', clamp(folderPath, 40));
       }),
-      bridge.on('watcher-stopped', () => {
+      getBridge().on('watcher-stopped', () => {
         addLog('neutral', 'Watcher stopped');
       }),
-      bridge.on('watcher-file', ({ filePath }) => {
-        addLog('nav', `New file detected`, bridge.basename(filePath));
+      getBridge().on('watcher-file', ({ filePath }) => {
+        addLog('nav', `New file detected`, getBridge().basename(filePath));
       }),
-      bridge.on('watcher-error', ({ reason }) => {
+      getBridge().on('watcher-error', ({ reason }) => {
         addLog('error', 'Watcher error', reason);
       }),
     ];
@@ -205,11 +205,11 @@ export default function App() {
   // ── Handlers ──
   const handleFileDrop = (filePath, name) => {
     addLog('nav', `File dropped: ${name}`);
-    bridge.fileDropped(filePath);
+    getBridge().fileDropped(filePath);
   };
 
   const handleSelectFolder = async () => {
-    const folder = await bridge.selectWatchFolder();
+    const folder = await getBridge().selectWatchFolder();
     if (folder) {
       setWatchFolder(folder);
       addLog('info', 'Watch folder set', clamp(folder, 40));
@@ -217,14 +217,14 @@ export default function App() {
   };
 
   const handleStopWatcher = () => {
-    bridge.stopWatcher();
+    getBridge().stopWatcher();
     setWatchFolder(null);
   };
 
   const handleToggleFloat = () => {
     const next = !floatOn;
     setFloatOn(next);
-    bridge.setFloat(next);
+    getBridge().setFloat(next);
     addLog('info', `Float ${next ? 'ON' : 'OFF'}`);
   };
 
@@ -234,187 +234,34 @@ export default function App() {
       addLog('warn', 'Invalid hash format', 'Expected: BRAND_XXXX (e.g. MIEZ_8368)');
       return;
     }
-    bridge.navigateToHash(h);
+    getBridge().navigateToHash(h);
     setManualHash('');
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
-    <div
-      className="flex flex-col h-screen text-white overflow-hidden"
-      style={{
-        width: 300,
-        background: 'linear-gradient(160deg, #0f0f12 0%, #0c0c0f 100%)',
-        fontFamily: "'DM Mono', 'Fira Code', monospace",
-      }}
-    >
-      {/* ── Drag region / title bar ── */}
-      <div
-        className="flex items-center justify-between px-4 pt-4 pb-3"
-        style={{ WebkitAppRegion: 'drag' }}
-      >
-        {/* Traffic light spacer */}
-        <div className="w-16" />
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-violet-500 shadow-[0_0_8px_#8b5cf6]" />
-          <span className="text-[11px] font-semibold tracking-widest text-white/70 uppercase">
-            Vidsy Bridge
-          </span>
-        </div>
-        <button
-          onClick={handleToggleFloat}
-          style={{ WebkitAppRegion: 'no-drag' }}
-          className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
-          title={floatOn ? 'Disable float' : 'Float on top'}
-        >
-          {floatOn ? (
-            <Pin size={13} className="text-violet-400" />
-          ) : (
-            <PinOff size={13} className="text-white/30" />
-          )}
-        </button>
+    <div className="flex flex-col h-screen text-white overflow-hidden bg-[#0d0d0f]">
+      {/* Clean Title Bar */}
+      <div className="p-4 border-b border-white/5 flex justify-between items-center" style={{ WebkitAppRegion: 'drag' }}>
+        <span className="text-[10px] font-bold tracking-widest uppercase opacity-50">Vidsy Uploader</span>
+        <Badge type={isNavigating ? 'info' : 'success'}>READY</Badge>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 scrollbar-thin scrollbar-thumb-white/10">
-
-        {/* ── Nav Status ── */}
-        {navStatus && (
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-white/35 uppercase tracking-wider">Active</span>
-              {isNavigating ? (
-                <Loader2 size={12} className="text-violet-400 animate-spin" />
-              ) : (
-                <Wifi size={12} className="text-emerald-400" />
-              )}
-            </div>
-            <Badge type={isNavigating ? 'info' : 'success'}>
-              {navStatus.hash}
-            </Badge>
-            <p className="text-[9px] text-white/25 font-mono truncate">{navStatus.url}</p>
-          </div>
-        )}
-
-        {/* ── Drop Zone ── */}
-        <section>
-          <p className="text-[10px] text-white/35 uppercase tracking-wider mb-1.5 px-0.5">
-            Drop a File
-          </p>
+      <div className="flex-1 p-6 flex flex-col gap-6">
+        {/* The Giant Drop Zone */}
+        <section className="flex-1 flex flex-col">
           <DropZone onFile={handleFileDrop} />
         </section>
 
-        {/* ── Manual Hash ── */}
-        <section>
-          <p className="text-[10px] text-white/35 uppercase tracking-wider mb-1.5 px-0.5">
-            Jump to Hash
-          </p>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Hash
-                size={12}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/25"
-              />
-              <input
-                type="text"
-                value={manualHash}
-                onChange={(e) => setManualHash(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && handleManualNav()}
-                placeholder="MIEZ_8368"
-                className="
-                  w-full bg-white/5 border border-white/10 rounded-lg
-                  pl-7 pr-3 py-2 text-[11px] text-white/80 placeholder-white/20
-                  focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.07]
-                  transition-all font-mono
-                "
-              />
-            </div>
-            <button
-              onClick={handleManualNav}
-              className="
-                px-3 py-2 rounded-lg text-[11px] font-semibold
-                bg-violet-600 hover:bg-violet-500 active:scale-95
-                transition-all duration-150
-              "
-            >
-              Go
-            </button>
-          </div>
-        </section>
-
-        {/* ── Watch Folder ── */}
-        <section>
-          <p className="text-[10px] text-white/35 uppercase tracking-wider mb-1.5 px-0.5">
-            Finder Watch
-          </p>
-          {watchFolder ? (
-            <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
-              <div className="flex items-start gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <FolderOpen size={14} className="text-emerald-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-emerald-400 font-semibold">Watching</p>
-                  <p className="text-[9px] text-white/40 font-mono truncate">
-                    {clamp(watchFolder, 30)}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={handleStopWatcher}
-                className="
-                  w-full flex items-center justify-center gap-1.5
-                  py-1.5 rounded-lg text-[10px] text-red-400
-                  bg-red-500/10 hover:bg-red-500/20 border border-red-500/20
-                  transition-all duration-150
-                "
-              >
-                <FolderX size={12} />
-                Stop Watching
-              </button>
-            </div>
+        {/* Simplified Activity Feed */}
+        <section className="h-48 overflow-y-auto bg-white/5 rounded-xl p-3 border border-white/10">
+          <p className="text-[10px] uppercase opacity-30 mb-2">Upload Queue</p>
+          {log.length === 0 ? (
+            <p className="text-xs opacity-20 text-center py-10">Drop files to begin</p>
           ) : (
-            <button
-              onClick={handleSelectFolder}
-              className="
-                w-full flex items-center justify-center gap-2
-                py-3 rounded-xl text-[11px] font-medium text-white/50
-                bg-white/[0.03] border border-white/[0.08]
-                hover:bg-white/[0.06] hover:text-white/70 hover:border-white/15
-                transition-all duration-150
-              "
-            >
-              <FolderOpen size={14} />
-              Select Watch Folder…
-            </button>
+            log.map((entry) => <LogEntry key={entry.id} entry={entry} />)
           )}
         </section>
-
-        {/* ── Activity Log ── */}
-        <section className="flex-1">
-          <div className="flex items-center justify-between mb-1.5 px-0.5">
-            <p className="text-[10px] text-white/35 uppercase tracking-wider">Activity</p>
-            {log.length > 0 && (
-              <span className="text-[9px] text-white/20 font-mono">{log.length} entries</span>
-            )}
-          </div>
-          <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-2 max-h-64 overflow-y-auto">
-            {log.length === 0 ? (
-              <p className="text-[10px] text-white/20 text-center py-6">
-                Activity will appear here
-              </p>
-            ) : (
-              log.map((entry) => <LogEntry key={entry.id} entry={entry} />)
-            )}
-          </div>
-        </section>
-      </div>
-
-      {/* ── Footer ── */}
-      <div className="px-4 py-2 border-t border-white/5 flex items-center justify-between">
-        <span className="text-[9px] text-white/15 font-mono">Vidsy Bridge v1.0</span>
-        <span className="text-[9px] text-white/15">
-          {floatOn && <span className="text-violet-400/60">● FLOATING</span>}
-        </span>
       </div>
     </div>
   );

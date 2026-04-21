@@ -23,7 +23,7 @@ const store = new Store({
   defaults: {
     watchFolder: null,
     floatOnTop: false,
-    windowBounds: { width: 1280, height: 820 },
+    windowBounds: { width: 800, height: 600 },
   },
 });
 
@@ -42,8 +42,8 @@ const SESSION_PARTITION = 'persist:vidsy'; // key: keeps cookies/localStorage
  * returns { brand: "MIEZ", hash: "MIEZ_8368" } or null.
  */
 function extractShortHash(filename) {
-  // Matches WORD_DIGITS at the start of the filename (before any further underscore segments)
-  const match = path.basename(filename).match(/^([A-Z]+)_(\d+)/i);
+  // Regex looks for "MIEZ_8368"
+  const match = path.basename(filename).match(/([A-Z]+)_(\d+)/i);
   if (!match) return null;
   return {
     brand: match[1].toUpperCase(),
@@ -51,10 +51,8 @@ function extractShortHash(filename) {
   };
 }
 
-/**
- * Build the Vidsy curation URL from a short hash object.
- */
 function buildVidsyUrl({ brand, hash }) {
+  // Result: https://app.vidsy.co/curation/MIEZ/videos/MIEZ_8368
   return `${VIDSY_BASE}/curation/${brand}/videos/${hash}`;
 }
 
@@ -225,16 +223,19 @@ function stopWatcher() {
 }
 
 // ─── BrowserView layout helper ──────────────────────────────────────────────
-const SIDEBAR_WIDTH = 300; // px reserved for the React sidebar
+// main.js
+const SIDEBAR_WIDTH = 800; // Match your window width
 
 function layoutBrowserView() {
   if (!mainWindow || !vidsynView) return;
   const [winW, winH] = mainWindow.getContentSize();
+  
+  // The Vidsy web session now runs at 0px width in the background
   vidsynView.setBounds({
-    x: SIDEBAR_WIDTH,
+    x: 0,
     y: 0,
-    width: winW - SIDEBAR_WIDTH,
-    height: winH,
+    width: 0, 
+    height: 0,
   });
 }
 
