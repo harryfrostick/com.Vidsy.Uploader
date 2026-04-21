@@ -239,30 +239,28 @@ export default function App() {
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
-  return (
-    <div className="flex flex-col h-screen text-white overflow-hidden bg-[#0d0d0f]">
-      {/* Clean Title Bar */}
-      <div className="p-4 border-b border-white/5 flex justify-between items-center" style={{ WebkitAppRegion: 'drag' }}>
-        <span className="text-[10px] font-bold tracking-widest uppercase opacity-50">Vidsy Uploader</span>
-        <Badge type={isNavigating ? 'info' : 'success'}>READY</Badge>
-      </div>
-
-      <div className="flex-1 p-6 flex flex-col gap-6">
-        {/* The Giant Drop Zone */}
-        <section className="flex-1 flex flex-col">
-          <DropZone onFile={handleFileDrop} />
-        </section>
-
-        {/* Simplified Activity Feed */}
-        <section className="h-48 overflow-y-auto bg-white/5 rounded-xl p-3 border border-white/10">
-          <p className="text-[10px] uppercase opacity-30 mb-2">Upload Queue</p>
-          {log.length === 0 ? (
-            <p className="text-xs opacity-20 text-center py-10">Drop files to begin</p>
-          ) : (
-            log.map((entry) => <LogEntry key={entry.id} entry={entry} />)
-          )}
-        </section>
-      </div>
+return (
+  <div className="flex items-center justify-center h-screen w-full bg-[#f3f3f3] p-10 font-sans">
+    <div 
+      className="w-full h-full border-4 border-dashed border-gray-400 rounded-[40px] flex items-center justify-center bg-gray-300 hover:bg-gray-400 transition-colors cursor-pointer"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileDrop(file.path, file.name);
+      }}
+    >
+      <p className="text-4xl font-bold text-gray-800 text-center">
+        Drag and Drop Files to Upload
+      </p>
     </div>
-  );
+    
+    {/* Minimal Status Badge in Corner */}
+    <div className="absolute bottom-6 right-8">
+       <Badge type={isNavigating ? 'info' : 'success'}>
+        {isNavigating ? 'UPLOADING...' : 'SYSTEM READY'}
+      </Badge>
+    </div>
+  </div>
+);
 }

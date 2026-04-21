@@ -228,9 +228,9 @@ const SIDEBAR_WIDTH = 800; // Match your window width
 
 function layoutBrowserView() {
   if (!mainWindow || !vidsynView) return;
-  const [winW, winH] = mainWindow.getContentSize();
   
-  // The Vidsy web session now runs at 0px width in the background
+  // We set width and height to 0 so the Vidsy website
+  // is completely invisible, but still running in the background.
   vidsynView.setBounds({
     x: 0,
     y: 0,
@@ -261,16 +261,17 @@ function createWindow() {
       nodeIntegration: false,   // security: no Node in renderer
       sandbox: false,           // needed for preload to use require
     },
+    
   });
 
   // ── Load the React renderer ──
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
-    );
-  }
+  // Inside createWindow()
+if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+  mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+} else {
+  // If the variable above isn't set, manually try the standard Vite port:
+  mainWindow.loadURL("http://localhost:5173"); 
+}
 
   // ── Attach BrowserView for Vidsy ──
   vidsynView = new BrowserView({
