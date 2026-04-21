@@ -2,7 +2,7 @@
   "name": "vidsy-bridge",
   "version": "1.0.0",
   "description": "Smart uploader bridge for the Vidsy platform",
-  "main": ".vite/build/main.js",
+  "main": ".vite/build/vidsy-bridge.js",
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
