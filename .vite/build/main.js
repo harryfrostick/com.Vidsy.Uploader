@@ -170,7 +170,6 @@ function stopWatcher() {
 }
 function layoutBrowserView() {
   if (!mainWindow || !vidsynView) return;
-  const [winW, winH] = mainWindow.getContentSize();
   vidsynView.setBounds({
     x: 0,
     y: 0,
@@ -202,7 +201,7 @@ function createWindow() {
     }
   });
   {
-    mainWindow.loadURL("http://localhost:5174");
+    mainWindow.loadURL("http://localhost:5173");
   }
   vidsynView = new BrowserView({
     webPreferences: {

@@ -95,44 +95,82 @@ function LogEntry({ entry }) {
 function DropZone({ onFile }) {
   const [dragging, setDragging] = useState(false);
   const ref = useRef(null);
+  const inputRef = useRef(null);
 
   const handleDragOver = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragging(true);
   };
-  const handleDragLeave = () => setDragging(false);
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragging(false);
-    const files = [...(e.dataTransfer?.files || [])];
+
+    // In Electron, dataTransfer.files may not have .path
+    // Try to get paths from the event directly
+    const files = Array.from(e.dataTransfer?.files || []);
+    
     files.forEach((f) => {
       const ext = f.name.split('.').pop().toLowerCase();
-      if (ext === 'mp4' || ext === 'mov') onFile(f.path, f.name);
+      if (ext === 'mp4' || ext === 'mov') {
+        // In Electron, we can try to use the webkitRelativePath or just send the name
+        // The main process will handle the actual file path via native APIs
+        onFile(f.path || f.name, f.name);
+      }
+    });
+  };
+
+  const handleFileInput = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((f) => {
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (ext === 'mp4' || ext === 'mov') {
+        onFile(f.path || f.name, f.name);
+      }
     });
   };
 
   return (
-    <div
-      ref={ref}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={`
-        relative flex flex-col items-center justify-center gap-3
-        rounded-xl border-2 border-dashed transition-all duration-200 cursor-default select-none
-        py-8 px-4
-        ${dragging
-          ? 'border-violet-400 bg-violet-500/10 scale-[1.02]'
-          : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
-        }
-      `}
-    >
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept=".mp4,.mov"
+        onChange={handleFileInput}
+        style={{ display: 'none' }}
+      />
       <div
+        ref={ref}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
         className={`
-          w-12 h-12 rounded-full flex items-center justify-center transition-all
-          ${dragging ? 'bg-violet-500/20 text-violet-300' : 'bg-white/5 text-white/30'}
+          relative flex flex-col items-center justify-center gap-3
+          rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer select-none
+          py-8 px-4
+          ${
+            dragging
+              ? 'border-violet-400 bg-violet-500/10 scale-[1.02]'
+              : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+          }
         `}
       >
+        <div
+          className={`
+            w-12 h-12 rounded-full flex items-center justify-center transition-all
+            ${dragging ? 'bg-violet-500/20 text-violet-300' : 'bg-white/5 text-white/30'}
+          `}
+        >
         <Upload size={22} strokeWidth={1.5} />
       </div>
       <div className="text-center">

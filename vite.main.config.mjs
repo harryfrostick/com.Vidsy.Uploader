@@ -4,7 +4,9 @@ export default defineConfig({
   build: {
     outDir: '.vite/build',
     lib: {
-      entry: 'main.js', // This points to your main.js file
+      entry: 'main.js',
+      name: 'main',
+      fileName: 'main',
       formats: ['cjs'],
     },
     rollupOptions: {

@@ -4,7 +4,9 @@ export default defineConfig({
   build: {
     outDir: '.vite/build',
     lib: {
-      entry: 'preload.js', // This points to your preload.js file
+      entry: 'preload.js',
+      name: 'preload',
+      fileName: 'preload',
       formats: ['cjs'],
     },
   },
