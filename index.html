@@ -1,165 +1,39 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vidsy Uploader</title>
+    <!-- Tailwind CSS for the premium UI in App.jsx -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background-color: #121212;
-            color: #00ff41; /* Classic Matrix/Terminal Green */
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            background-color: #0d0d0f;
             margin: 0;
-            overflow: hidden;
-        }
-
-        #app-container {
-            width: 800px;
-            border: 2px solid #00ff41;
             padding: 0;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
-            position: relative;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            padding: 15px 20px;
-            border-bottom: 2px solid #00ff41;
-            font-weight: bold;
-            letter-spacing: 2px;
-        }
-
-        #status-ready {
-            color: #00ff41;
-        }
-
-        #drop-zone {
-            margin: 40px;
-            height: 250px;
-            border: 2px dashed #00ff41;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            text-transform: uppercase;
-            font-size: 1.2rem;
-        }
-
-        #drop-zone.dragover {
-            background-color: rgba(0, 255, 65, 0.1);
-        }
-
-        footer {
-            border-top: 2px solid #00ff41;
-            padding: 10px 20px;
-            font-size: 0.9rem;
-            min-height: 20px;
-            white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis;
+            -webkit-user-select: none;
+            user-select: none;
         }
-
-        .cursor {
-            display: inline-block;
-            width: 10px;
-            height: 1.2rem;
-            background-color: #00ff41;
-            margin-left: 5px;
-            animation: blink 1s step-end infinite;
-            vertical-align: middle;
+        /* Custom scrollbar for the activity log */
+        ::-webkit-scrollbar {
+            width: 4px;
         }
-
-        @keyframes blink {
-            50% { opacity: 0; }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
         }
-
-        input[type="file"] {
-            display: none;
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
     </style>
 </head>
 <body>
-
-    <div id="app-container">
-        <header>
-            <div class="title">VIDSY UPLOADER</div>
-            <div class="status">[ <span id="status-ready">READY</span> ]</div>
-        </header>
-
-        <div id="drop-zone">
-            <span>Drag and Drop Files to Upload</span>
-            <input type="file" id="file-input" accept="video/*">
-        </div>
-
-        <footer>
-            <span>Activity: </span><span id="activity-log">System initialized...</span><span class="cursor"></span>
-        </footer>
-    </div>
-
-    <script>
-        // Log the preload bridge initialization as requested in Test 2
-        console.log("[preload] contextBridge.exposeInMainWorld(\"vidsyBridge\") completed");
-
-        const dropZone = document.getElementById('drop-zone');
-        const activityLog = document.getElementById('activity-log');
-        const fileInput = document.getElementById('file-input');
-
-        function updateActivity(message) {
-            activityLog.textContent = message;
-            console.log(`[Activity] ${message}`);
-        }
-
-        // Test 1: Click to verify / Open Dialog
-        dropZone.addEventListener('click', () => {
-            updateActivity("Drop zone clicked");
-            fileInput.click();
-        });
-
-        // Test 2 & 3: Drag and Drop Logic
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
-        dropZone.addEventListener('dragenter', (e) => {
-            e.preventDefault();
-            console.log("[DropZone] Drag enter");
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            console.log("[DropZone] Drop event received");
-
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
-        });
-
-        function handleFile(file) {
-            const message = `${file.name} detected... routing to URL`;
-            updateActivity(message);
-            console.log(`Terminal: Processing ${file.name}`);
-        }
-    </script>
+    <div id="root"></div>
+    <!-- Load the React entry point -->
+    <script type="module" src="/main.jsx"></script>
 </body>
 </html>

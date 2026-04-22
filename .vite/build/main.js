@@ -72,12 +72,12 @@ function navigateAndInject(filePath) {
   vidsynView.webContents.loadURL(targetUrl);
   vidsynView.webContents.once("did-finish-load", () => {
     console.log("[navigateAndInject] Page loaded, starting inject...");
-    injectFileIntoUploader(filePath);
+    injectFileIntoUploader(filePath, result.hash);
     mainWindow == null ? void 0 : mainWindow.webContents.send("nav-complete", { url: targetUrl });
   });
 }
-async function injectFileIntoUploader(filePath) {
-  console.log("[injectFileIntoUploader] Starting with:", filePath);
+async function injectFileIntoUploader(filePath, projectHash) {
+  console.log("[injectFileIntoUploader] Starting with:", filePath, "Hash:", projectHash);
   if (!vidsynView) {
     console.error("[injectFileIntoUploader] BrowserView is null!");
     return;
@@ -105,48 +105,106 @@ async function injectFileIntoUploader(filePath) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const file = new File([bytes], "${fileName}", { type: "${mimeType}" });
 
-      // Heuristic selectors for Vidsy's drop zone (update if their markup changes)
-      const selectors = [
-        '[data-testid="upload-dropzone"]',
-        '.upload-drop-zone',
-        '[class*="dropzone"]',
-        '[class*="drop-zone"]',
-        'input[type="file"]',
-      ];
-
+      // 1. Determine project ID to look for
+      const fullHash = "${projectHash}"; 
+      const numericID = fullHash.split('_')[1] || fullHash;
+      console.log('Searching for project slot:', fullHash, 'or', numericID);
+      
       let target = null;
-      for (const sel of selectors) {
-        target = document.querySelector(sel);
-        if (target) break;
+      let projectContainer = null;
+      let retries = 0;
+      const MAX_RETRIES = 12; // Try for 12 seconds
+
+      while (retries < MAX_RETRIES) {
+        const allTextElements = document.querySelectorAll('p, span, h1, h2, h3, h4, div, b, strong, a');
+        for (const el of allTextElements) {
+          const text = el.textContent.trim();
+          if (text.includes(fullHash) || (numericID && text.includes(numericID))) {
+            projectContainer = el.closest('[class*="item"], [class*="card"], [class*="row"], [class*="slot"], section, article');
+            if (projectContainer) break;
+          }
+        }
+
+        if (projectContainer) {
+          // Inside the container, look for an input first (most reliable)
+          target = projectContainer.querySelector('input[type="file"]');
+          if (!target) {
+            // Then look for standard dropzones
+            const selectors = ['[data-testid="upload-dropzone"]', '.upload-drop-zone', '[class*="dropzone"]'];
+            for (const sel of selectors) {
+              target = projectContainer.querySelector(sel);
+              if (target) break;
+            }
+          }
+          if (!target) target = projectContainer;
+          break;
+        }
+
+        console.log('Slot not found yet, retrying... (' + (retries + 1) + ')');
+        await new Promise(r => setTimeout(r, 1000));
+        retries++;
+      }
+
+      // Final Fallback: Search the entire page for ANY file input if we didn't find one in the container
+      if (!target || target.tagName !== 'INPUT') {
+        const globalInput = document.querySelector('input[type="file"]');
+        if (globalInput) {
+          console.log('Using global file input fallback');
+          target = globalInput;
+        }
       }
 
       if (!target) {
-        return { ok: false, reason: 'No upload dropzone found on page.' };
+        console.log('No specific dropzone found, falling back to document.body');
+        target = document.body;
       }
 
-      // If it's a file input, set files directly
+      // Method A: Direct Input Injection (Highly Reliable)
       if (target.tagName === 'INPUT') {
+        console.log('Executing Direct Input Injection');
         const dt = new DataTransfer();
         dt.items.add(file);
         target.files = dt.files;
         target.dispatchEvent(new Event('change', { bubbles: true }));
-        return { ok: true, method: 'input' };
+        return { ok: true, method: 'input-direct', target: 'input[type="file"]' };
       }
 
-      // Otherwise dispatch drag-and-drop events
+      // Method B: Drag-and-Drop Simulation
+      console.log('Executing Drag-and-Drop Simulation');
+      if (target.style) {
+        target.style.outline = '5px solid violet';
+        target.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+      }
+
       const dt = new DataTransfer();
       dt.items.add(file);
+      dt.dropEffect = 'copy';
+      dt.effectAllowed = 'all';
 
       const makeDragEvent = (type) => {
-        const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
-        return ev;
+        const rect = target.getBoundingClientRect();
+        return new DragEvent(type, { 
+          bubbles: true, 
+          cancelable: true, 
+          dataTransfer: dt,
+          clientX: rect.left + (rect.width / 2),
+          clientY: rect.top + (rect.height / 2)
+        });
       };
 
       target.dispatchEvent(makeDragEvent('dragenter'));
       target.dispatchEvent(makeDragEvent('dragover'));
+      await new Promise(r => setTimeout(r, 200));
+      target.dispatchEvent(makeDragEvent('dragover'));
       target.dispatchEvent(makeDragEvent('drop'));
 
-      return { ok: true, method: 'drag-drop' };
+      return { 
+        ok: true, 
+        method: 'drag-drop', 
+        target: target.tagName + (target.className ? '.' + target.className.split(' ').join('.') : ''),
+        foundContainer: !!projectContainer,
+        retries: retries
+      };
     })()
   `;
   try {
@@ -154,8 +212,8 @@ async function injectFileIntoUploader(filePath) {
     const result = await vidsynView.webContents.executeJavaScript(script);
     console.log("[injectFileIntoUploader] Script result:", result);
     if (result == null ? void 0 : result.ok) {
-      console.log("[injectFileIntoUploader] Success! Method:", result.method);
-      mainWindow == null ? void 0 : mainWindow.webContents.send("inject-success", { method: result.method, file: fileName });
+      console.log("[injectFileIntoUploader] Success! Method:", result.method, "Target:", result.target);
+      mainWindow == null ? void 0 : mainWindow.webContents.send("inject-success", { method: result.method, file: fileName, target: result.target });
     } else {
       console.warn("[injectFileIntoUploader] Script returned error:", result == null ? void 0 : result.reason);
       mainWindow == null ? void 0 : mainWindow.webContents.send("inject-error", { reason: (result == null ? void 0 : result.reason) || "Unknown" });
@@ -201,10 +259,10 @@ function stopWatcher() {
 function layoutBrowserView() {
   if (!mainWindow || !vidsynView) return;
   vidsynView.setBounds({
-    x: 0,
-    y: 0,
-    width: 0,
-    height: 0
+    x: -2e3,
+    y: -2e3,
+    width: 1024,
+    height: 768
   });
 }
 function createWindow() {
@@ -245,15 +303,21 @@ function createWindow() {
   mainWindow.webContents.on("did-finish-load", () => {
     console.log("[main] Renderer loaded successfully");
   });
+  const vidsyPreloadPath = path.join(__dirname, "vidsy-preload.js");
   vidsynView = new BrowserView({
     webPreferences: {
       session: vidsySession,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      preload: vidsyPreloadPath
+      // Attach the progress-tracking preload
     }
   });
   mainWindow.addBrowserView(vidsynView);
   vidsynView.webContents.loadURL(VIDSY_BASE);
+  vidsynView.webContents.on("console-message", (event, level, message) => {
+    console.log("[Vidsy Platform Console]", message);
+  });
   layoutBrowserView();
   mainWindow.on("resize", layoutBrowserView);
   mainWindow.on("close", () => {
@@ -308,6 +372,15 @@ ipcMain.on("navigate-to-hash", (_event, { hash }) => {
   const url = buildVidsyUrl({ brand: match[1].toUpperCase(), hash: hash.toUpperCase() });
   vidsynView.webContents.loadURL(url);
   mainWindow == null ? void 0 : mainWindow.webContents.send("nav-started", { hash, url });
+});
+ipcMain.on("upload-progress", (_event, { percent }) => {
+  mainWindow == null ? void 0 : mainWindow.webContents.send("upload-progress", { percent });
+});
+ipcMain.on("upload-complete", () => {
+  mainWindow == null ? void 0 : mainWindow.webContents.send("upload-complete", {});
+});
+ipcMain.on("upload-error", (_event, { reason }) => {
+  mainWindow == null ? void 0 : mainWindow.webContents.send("upload-error", { reason });
 });
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {

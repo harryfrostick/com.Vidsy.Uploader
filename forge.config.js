@@ -23,6 +23,10 @@ module.exports = {
             entry: 'preload.js',
             config: 'vite.preload.config.mjs',
           },
+          {
+            entry: 'vidsy-preload.js',
+            config: 'vite.vidsy-preload.config.mjs',
+          },
         ],
         // This tells Forge where your Sidebar UI config is
         renderer: [

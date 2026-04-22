@@ -118,31 +118,57 @@ function DropZone({ onFile }) {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
+    console.log('[DropZone.handleDrop] Drop event received');
 
     // "onFile" callback is the handleFileDrop from parent component
     // which needs the actual file path
     const dataTransfer = e.dataTransfer;
     const files = Array.from(dataTransfer?.files || []);
     
+    console.log('[DropZone.handleDrop] Number of files:', files.length);
+    
     if (files.length === 0) {
+      console.log('[DropZone.handleDrop] No files found');
       return;
     }
 
-    files.forEach((f) => {
+    files.forEach((f, idx) => {
+      console.log(`[DropZone.handleDrop] File ${idx}:`, {
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        hasPath: !!f.path,
+        pathValue: f.path
+      });
+      
       const ext = f.name.split('.').pop().toLowerCase();
       if (ext === 'mp4' || ext === 'mov') {
-        // f.path should be available in Electron for OS file drops
-        onFile(f.path || f.name, f.name);
+        const pathToPass = f.path || f.name;
+        console.log(`[DropZone.handleDrop] Calling onFile with: path="${pathToPass}", name="${f.name}"`);
+        onFile(pathToPass, f.name);
+      } else {
+        console.log(`[DropZone.handleDrop] File ${idx} skipped - extension ${ext} not mp4/mov`);
       }
     });
   };
 
   const handleFileInput = (e) => {
+    console.log('[DropZone.handleFileInput] File input changed');
     const files = Array.from(e.target.files || []);
-    files.forEach((f) => {
+    console.log('[DropZone.handleFileInput] Number of files:', files.length);
+    
+    files.forEach((f, idx) => {
+      console.log(`[DropZone.handleFileInput] File ${idx}:`, {
+        name: f.name,
+        hasPath: !!f.path,
+        pathValue: f.path
+      });
+      
       const ext = f.name.split('.').pop().toLowerCase();
       if (ext === 'mp4' || ext === 'mov') {
-        onFile(f.path || f.name, f.name);
+        const pathToPass = f.path || f.name;
+        console.log(`[DropZone.handleFileInput] Calling onFile with: path="${pathToPass}", name="${f.name}"`);
+        onFile(pathToPass, f.name);
       }
     });
   };
@@ -201,11 +227,15 @@ function DropZone({ onFile }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  console.log('[App] ========== APP COMPONENT LOADED (v2 with enhanced logging) ==========');
   const [watchFolder, setWatchFolder] = useState(null);
   const [floatOn, setFloatOn] = useState(false);
   const [manualHash, setManualHash] = useState('');
   const [navStatus, setNavStatus] = useState(null); // { hash, url } | null
   const [isNavigating, setIsNavigating] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null); // 0-100 | null
+  const [uploadStatus, setUploadStatus] = useState('READY'); // READY, NAVIGATING, UPLOADING, COMPLETED, ERROR
+  const [hasError, setHasError] = useState(false);
   const [log, addLog] = useLog();
 
   // ── Boot: restore persisted state ──
@@ -219,8 +249,26 @@ export default function App() {
   // ── IPC subscriptions ──
   useEffect(() => {
     const unsubs = [
+      getBridge().on('upload-progress', ({ percent }) => {
+        setUploadProgress(percent);
+        setUploadStatus('UPLOADING');
+      }),
+      getBridge().on('upload-complete', () => {
+        setUploadProgress(null);
+        setUploadStatus('COMPLETED');
+        addLog('success', 'Upload complete!');
+        // Revert to READY after 5 seconds
+        setTimeout(() => setUploadStatus('READY'), 5000);
+      }),
+      getBridge().on('upload-error', ({ reason }) => {
+        setUploadProgress(null);
+        setUploadStatus('ERROR');
+        addLog('error', 'Upload failed', reason);
+      }),
       getBridge().on('nav-started', ({ file, url, hash }) => {
         setIsNavigating(true);
+        setHasError(false);
+        setUploadStatus('NAVIGATING');
         setNavStatus({ hash, url });
         addLog('nav', file ? `Navigating for ${file}` : `Navigating to ${hash}`, url);
       }),
@@ -230,12 +278,17 @@ export default function App() {
       }),
       getBridge().on('nav-error', ({ file, reason }) => {
         setIsNavigating(false);
+        setHasError(true);
+        setUploadStatus('ERROR');
         addLog('warn', `Skipped: ${file}`, reason);
       }),
-      getBridge().on('inject-success', ({ method, file }) => {
-        addLog('success', `Upload injected (${method})`, file);
+      getBridge().on('inject-success', ({ method, file, target }) => {
+        setHasError(false);
+        addLog('success', `Upload injected into ${target || 'page'}`, file);
       }),
       getBridge().on('inject-error', ({ reason }) => {
+        setHasError(true);
+        setUploadStatus('ERROR');
         addLog('error', 'Auto-upload failed', reason);
       }),
       getBridge().on('watcher-started', ({ folderPath }) => {
@@ -256,39 +309,43 @@ export default function App() {
 
   // ── Handlers ──
   const handleFileDrop = (filePath, name) => {
-    console.log('[App.handleFileDrop] Called with:', { filePath, name });
+    console.log('[App.handleFileDrop] >>> ENTER <<<');
+    console.log('[App.handleFileDrop] filePath=', filePath, 'type=', typeof filePath);
+    console.log('[App.handleFileDrop] name=', name, 'type=', typeof name);
     addLog('nav', `Dropped: ${name}`, filePath || '(no path)');
     
     if (!filePath || filePath === name) {
       addLog('error', 'Invalid file path', `${name} - cannot proceed`);
-      console.error('[App.handleFileDrop] No valid path:', { filePath, name });
+      console.error('[App.handleFileDrop] EXIT: Invalid path check failed');
+      console.error('[App.handleFileDrop] filePath truthy?', !!filePath);
+      console.error('[App.handleFileDrop] filePath === name?', filePath === name);
       return;
     }
     
     addLog('info', 'Sending to backend...', filePath);
-    console.log('[App.handleFileDrop] Getting bridge...');
+    console.log('[App.handleFileDrop] Bridge check...');
     
     const bridge = getBridge();
     if (!bridge) {
-      console.error('[App.handleFileDrop] Bridge is null!');
+      console.error('[App.handleFileDrop] EXIT: Bridge is null');
       addLog('error', 'Bridge unavailable', 'Cannot communicate with backend');
       return;
     }
     
     if (!bridge.fileDropped) {
-      console.error('[App.handleFileDrop] fileDropped method not available on bridge!');
-      console.log('[App.handleFileDrop] Bridge methods:', Object.keys(bridge));
+      console.error('[App.handleFileDrop] EXIT: fileDropped method not available');
+      console.log('[App.handleFileDrop] Bridge methods available:', Object.keys(bridge));
       addLog('error', 'Method unavailable', 'fileDropped not found on bridge');
       return;
     }
     
-    console.log('[App.handleFileDrop] Calling bridge.fileDropped()');
+    console.log('[App.handleFileDrop] Invoking bridge.fileDropped(...)');
     try {
       bridge.fileDropped(filePath);
-      console.log('[App.handleFileDrop] fileDropped() call succeeded');
+      console.log('[App.handleFileDrop] <<< SUCCESS >>>');
       addLog('success', 'Backend notified', filePath);
     } catch (err) {
-      console.error('[App.handleFileDrop] fileDropped() error:', err);
+      console.error('[App.handleFileDrop] EXIT: Exception:', err.message);
       addLog('error', 'Backend error', err.message);
     }
   };
@@ -324,19 +381,54 @@ export default function App() {
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
+  const getStatusConfig = () => {
+    switch (uploadStatus) {
+      case 'COMPLETED': return { text: 'COMPLETED', color: 'text-green-400' };
+      case 'UPLOADING': return { text: 'UPLOADING', color: 'text-violet-400 animate-pulse' };
+      case 'NAVIGATING': return { text: 'NAVIGATING', color: 'text-blue-400' };
+      case 'ERROR': return { text: 'ERROR', color: 'text-red-400' };
+      default: return { text: 'READY', color: 'text-white/40' };
+    }
+  };
+
+  const statusCfg = getStatusConfig();
+
   return (
-    <div className="flex flex-col h-screen text-white overflow-hidden bg-[#0d0d0f]">
-      {/* Clean Title Bar */}
-      <div className="p-4 border-b border-white/5 flex justify-between items-center" style={{ WebkitAppRegion: 'drag' }}>
-        <span className="text-[10px] font-bold tracking-widest uppercase opacity-50">Vidsy Uploader</span>
-        <Badge type={isNavigating ? 'info' : 'success'}>READY</Badge>
-      </div>
+    <div className="flex flex-col h-screen text-white overflow-hidden bg-[#0d0d0f] font-sans selection:bg-violet-500/30">
+      {/* ── Header ── */}
+      <header className="h-14 border-b border-white/5 flex items-center justify-between px-6 bg-[#0d0d0f]/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
+            <Zap size={18} fill="white" />
+          </div>
+          <h1 className="text-sm font-bold tracking-widest text-white/90 uppercase">Vidsy Bridge</h1>
+        </div>
+        <div className={`text-[10px] font-black tracking-[0.2em] px-3 py-1 rounded-full bg-white/5 border border-white/5 ${statusCfg.color} transition-all duration-500`}>
+          {statusCfg.text}
+        </div>
+      </header>
 
       <div className="flex-1 p-6 flex flex-col gap-6">
         {/* The Giant Drop Zone */}
         <section className="flex-1 flex flex-col">
           <DropZone onFile={handleFileDrop} />
         </section>
+
+        {/* Upload Progress */}
+        {uploadProgress !== null && (
+          <div className="px-6 py-2">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[10px] font-mono text-white/50 uppercase">Uploading...</span>
+              <span className="text-[10px] font-mono text-violet-400">{uploadProgress}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+              <div 
+                className="h-full bg-violet-500 transition-all duration-300 ease-out" 
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Simplified Activity Feed */}
         <section className="h-48 overflow-y-auto bg-white/5 rounded-xl p-3 border border-white/10">
