@@ -22,7 +22,12 @@ import {
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const getBridge = () => window.vidsyBridge;
+const getBridge = () => {
+  if (!window.vidsyBridge) {
+    console.warn('[App] window.vidsyBridge is not available yet');
+  }
+  return window.vidsyBridge;
+};
 
 function clamp(str, max = 28) {
   if (!str) return '';
@@ -114,15 +119,19 @@ function DropZone({ onFile }) {
     e.stopPropagation();
     setDragging(false);
 
-    // In Electron, dataTransfer.files may not have .path
-    // Try to get paths from the event directly
-    const files = Array.from(e.dataTransfer?.files || []);
+    // "onFile" callback is the handleFileDrop from parent component
+    // which needs the actual file path
+    const dataTransfer = e.dataTransfer;
+    const files = Array.from(dataTransfer?.files || []);
     
+    if (files.length === 0) {
+      return;
+    }
+
     files.forEach((f) => {
       const ext = f.name.split('.').pop().toLowerCase();
       if (ext === 'mp4' || ext === 'mov') {
-        // In Electron, we can try to use the webkitRelativePath or just send the name
-        // The main process will handle the actual file path via native APIs
+        // f.path should be available in Electron for OS file drops
         onFile(f.path || f.name, f.name);
       }
     });
@@ -153,7 +162,11 @@ function DropZone({ onFile }) {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          console.log('[DropZone] Click handler fired');
+          addLog('info', 'Drop zone clicked');
+          inputRef.current?.click();
+        }}
         className={`
           relative flex flex-col items-center justify-center gap-3
           rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer select-none
@@ -182,6 +195,7 @@ function DropZone({ onFile }) {
         </p>
       </div>
     </div>
+    </>
   );
 }
 
@@ -242,8 +256,41 @@ export default function App() {
 
   // ── Handlers ──
   const handleFileDrop = (filePath, name) => {
-    addLog('nav', `File dropped: ${name}`);
-    getBridge().fileDropped(filePath);
+    console.log('[App.handleFileDrop] Called with:', { filePath, name });
+    addLog('nav', `Dropped: ${name}`, filePath || '(no path)');
+    
+    if (!filePath || filePath === name) {
+      addLog('error', 'Invalid file path', `${name} - cannot proceed`);
+      console.error('[App.handleFileDrop] No valid path:', { filePath, name });
+      return;
+    }
+    
+    addLog('info', 'Sending to backend...', filePath);
+    console.log('[App.handleFileDrop] Getting bridge...');
+    
+    const bridge = getBridge();
+    if (!bridge) {
+      console.error('[App.handleFileDrop] Bridge is null!');
+      addLog('error', 'Bridge unavailable', 'Cannot communicate with backend');
+      return;
+    }
+    
+    if (!bridge.fileDropped) {
+      console.error('[App.handleFileDrop] fileDropped method not available on bridge!');
+      console.log('[App.handleFileDrop] Bridge methods:', Object.keys(bridge));
+      addLog('error', 'Method unavailable', 'fileDropped not found on bridge');
+      return;
+    }
+    
+    console.log('[App.handleFileDrop] Calling bridge.fileDropped()');
+    try {
+      bridge.fileDropped(filePath);
+      console.log('[App.handleFileDrop] fileDropped() call succeeded');
+      addLog('success', 'Backend notified', filePath);
+    } catch (err) {
+      console.error('[App.handleFileDrop] fileDropped() error:', err);
+      addLog('error', 'Backend error', err.message);
+    }
   };
 
   const handleSelectFolder = async () => {
@@ -277,28 +324,30 @@ export default function App() {
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
-return (
-  <div className="flex items-center justify-center h-screen w-full bg-[#f3f3f3] p-10 font-sans">
-    <div 
-      className="w-full h-full border-4 border-dashed border-gray-400 rounded-[40px] flex items-center justify-center bg-gray-300 hover:bg-gray-400 transition-colors cursor-pointer"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        const file = e.dataTransfer.files[0];
-        if (file) handleFileDrop(file.path, file.name);
-      }}
-    >
-      <p className="text-4xl font-bold text-gray-800 text-center">
-        Drag and Drop Files to Upload
-      </p>
+  return (
+    <div className="flex flex-col h-screen text-white overflow-hidden bg-[#0d0d0f]">
+      {/* Clean Title Bar */}
+      <div className="p-4 border-b border-white/5 flex justify-between items-center" style={{ WebkitAppRegion: 'drag' }}>
+        <span className="text-[10px] font-bold tracking-widest uppercase opacity-50">Vidsy Uploader</span>
+        <Badge type={isNavigating ? 'info' : 'success'}>READY</Badge>
+      </div>
+
+      <div className="flex-1 p-6 flex flex-col gap-6">
+        {/* The Giant Drop Zone */}
+        <section className="flex-1 flex flex-col">
+          <DropZone onFile={handleFileDrop} />
+        </section>
+
+        {/* Simplified Activity Feed */}
+        <section className="h-48 overflow-y-auto bg-white/5 rounded-xl p-3 border border-white/10">
+          <p className="text-[10px] uppercase opacity-30 mb-2">Upload Queue</p>
+          {log.length === 0 ? (
+            <p className="text-xs opacity-20 text-center py-10">Drop files to begin</p>
+          ) : (
+            log.map((entry) => <LogEntry key={entry.id} entry={entry} />)
+          )}
+        </section>
+      </div>
     </div>
-    
-    {/* Minimal Status Badge in Corner */}
-    <div className="absolute bottom-6 right-8">
-       <Badge type={isNavigating ? 'info' : 'success'}>
-        {isNavigating ? 'UPLOADING...' : 'SYSTEM READY'}
-      </Badge>
-    </div>
-  </div>
-);
+  );
 }

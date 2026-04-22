@@ -25,51 +25,77 @@ let watcher = null;
 const VIDSY_BASE = "https://app.vidsy.co";
 const SESSION_PARTITION = "persist:vidsy";
 function extractShortHash(filename) {
+  console.log("[extractShortHash] Input:", filename);
   const match = path.basename(filename).match(/([A-Z]+)_(\d+)/i);
-  if (!match) return null;
-  return {
+  console.log("[extractShortHash] Regex match result:", match);
+  if (!match) {
+    console.warn("[extractShortHash] No match found for:", filename);
+    return null;
+  }
+  const result = {
     brand: match[1].toUpperCase(),
     hash: `${match[1].toUpperCase()}_${match[2]}`
   };
+  console.log("[extractShortHash] Extracted:", result);
+  return result;
 }
 function buildVidsyUrl({ brand, hash }) {
-  return `${VIDSY_BASE}/curation/${brand}/videos/${hash}`;
+  const url = `${VIDSY_BASE}/curation/${brand}/videos/${hash}`;
+  console.log("[buildVidsyUrl] Constructed URL:", url);
+  return url;
 }
 function navigateAndInject(filePath) {
-  if (!vidsynView) return;
+  console.log("[navigateAndInject] Started with:", filePath);
+  if (!vidsynView) {
+    console.error("[navigateAndInject] BrowserView not available");
+    return;
+  }
   const result = extractShortHash(filePath);
+  console.log("[navigateAndInject] Hash extraction result:", result);
   if (!result) {
+    const errorMsg = "Filename does not match the BRAND_XXXX pattern.";
+    console.warn("[navigateAndInject]", errorMsg, "File:", filePath);
     mainWindow == null ? void 0 : mainWindow.webContents.send("nav-error", {
       file: path.basename(filePath),
-      reason: "Filename does not match the BRAND_XXXX pattern."
+      reason: errorMsg
     });
     return;
   }
   const targetUrl = buildVidsyUrl(result);
+  console.log("[navigateAndInject] Target URL:", targetUrl);
   mainWindow == null ? void 0 : mainWindow.webContents.send("nav-started", {
     file: path.basename(filePath),
     url: targetUrl,
     hash: result.hash
   });
+  console.log("[navigateAndInject] Loading URL in BrowserView:", targetUrl);
   vidsynView.webContents.loadURL(targetUrl);
   vidsynView.webContents.once("did-finish-load", () => {
+    console.log("[navigateAndInject] Page loaded, starting inject...");
     injectFileIntoUploader(filePath);
     mainWindow == null ? void 0 : mainWindow.webContents.send("nav-complete", { url: targetUrl });
   });
 }
 async function injectFileIntoUploader(filePath) {
-  if (!vidsynView) return;
+  console.log("[injectFileIntoUploader] Starting with:", filePath);
+  if (!vidsynView) {
+    console.error("[injectFileIntoUploader] BrowserView is null!");
+    return;
+  }
+  console.log("[injectFileIntoUploader] BrowserView is available");
   let fileBuffer;
   try {
     fileBuffer = fs.readFileSync(filePath);
+    console.log("[injectFileIntoUploader] File read successfully, size:", fileBuffer.length);
   } catch (err) {
-    console.error("[inject] Could not read file:", err.message);
+    console.error("[injectFileIntoUploader] Could not read file:", err.message);
     mainWindow == null ? void 0 : mainWindow.webContents.send("inject-error", { reason: err.message });
     return;
   }
   const base64 = fileBuffer.toString("base64");
   const mimeType = filePath.endsWith(".mov") ? "video/quicktime" : "video/mp4";
   const fileName = path.basename(filePath);
+  console.log("[injectFileIntoUploader] File ready for injection:", { fileName, mimeType, base64Length: base64.length });
   const script = `
     (async () => {
       // Decode base64 → Uint8Array → File
@@ -124,14 +150,18 @@ async function injectFileIntoUploader(filePath) {
     })()
   `;
   try {
+    console.log("[injectFileIntoUploader] Executing JavaScript in BrowserView...");
     const result = await vidsynView.webContents.executeJavaScript(script);
+    console.log("[injectFileIntoUploader] Script result:", result);
     if (result == null ? void 0 : result.ok) {
+      console.log("[injectFileIntoUploader] Success! Method:", result.method);
       mainWindow == null ? void 0 : mainWindow.webContents.send("inject-success", { method: result.method, file: fileName });
     } else {
+      console.warn("[injectFileIntoUploader] Script returned error:", result == null ? void 0 : result.reason);
       mainWindow == null ? void 0 : mainWindow.webContents.send("inject-error", { reason: (result == null ? void 0 : result.reason) || "Unknown" });
     }
   } catch (err) {
-    console.error("[inject] executeJavaScript error:", err.message);
+    console.error("[injectFileIntoUploader] executeJavaScript error:", err.message);
     mainWindow == null ? void 0 : mainWindow.webContents.send("inject-error", { reason: err.message });
   }
 }
@@ -178,9 +208,14 @@ function layoutBrowserView() {
   });
 }
 function createWindow() {
+  console.log("[main] createWindow() called");
   const { width, height } = store.get("windowBounds");
   const floatOnTop = store.get("floatOnTop");
   const vidsySession = session.fromPartition(SESSION_PARTITION);
+  const preloadPath = path.join(__dirname, "preload.js");
+  console.log("[main] Preload path:", preloadPath);
+  console.log("[main] __dirname:", __dirname);
+  console.log("[main] Dev server URL:", "http://localhost:5173");
   mainWindow = new BrowserWindow({
     width,
     height,
@@ -191,7 +226,7 @@ function createWindow() {
     alwaysOnTop: floatOnTop,
     backgroundColor: "#0d0d0f",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       // security: isolate renderer from Node
       nodeIntegration: false,
@@ -200,9 +235,16 @@ function createWindow() {
       // needed for preload to use require
     }
   });
-  {
-    mainWindow.loadURL("http://localhost:5173");
-  }
+  console.log("[main] BrowserWindow created");
+  const devUrl = "http://localhost:5173";
+  console.log("[main] Loading URL:", devUrl);
+  mainWindow.loadURL(devUrl);
+  mainWindow.webContents.on("did-fail-load", (error) => {
+    console.error("[main] Failed to load:", error);
+  });
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.log("[main] Renderer loaded successfully");
+  });
   vidsynView = new BrowserView({
     webPreferences: {
       session: vidsySession,
@@ -228,6 +270,12 @@ function createWindow() {
   }
 }
 ipcMain.on("file-dropped", (_event, { filePath }) => {
+  console.log("[main] file-dropped event received:", filePath);
+  if (!filePath) {
+    console.warn("[main] No file path provided");
+    mainWindow == null ? void 0 : mainWindow.webContents.send("inject-error", { reason: "No file path provided" });
+    return;
+  }
   navigateAndInject(filePath);
 });
 ipcMain.handle("select-watch-folder", async () => {

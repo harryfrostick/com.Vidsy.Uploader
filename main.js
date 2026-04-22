@@ -42,35 +42,55 @@ const SESSION_PARTITION = 'persist:vidsy'; // key: keeps cookies/localStorage
  * returns { brand: "MIEZ", hash: "MIEZ_8368" } or null.
  */
 function extractShortHash(filename) {
-  // Regex looks for "MIEZ_8368"
+  console.log('[extractShortHash] Input:', filename);
   const match = path.basename(filename).match(/([A-Z]+)_(\d+)/i);
-  if (!match) return null;
-  return {
+  console.log('[extractShortHash] Regex match result:', match);
+  
+  if (!match) {
+    console.warn('[extractShortHash] No match found for:', filename);
+    return null;
+  }
+  
+  const result = {
     brand: match[1].toUpperCase(),
     hash: `${match[1].toUpperCase()}_${match[2]}`,
   };
+  console.log('[extractShortHash] Extracted:', result);
+  return result;
 }
 
 function buildVidsyUrl({ brand, hash }) {
+  const url = `${VIDSY_BASE}/curation/${brand}/videos/${hash}`;
+  console.log('[buildVidsyUrl] Constructed URL:', url);
   // Result: https://app.vidsy.co/curation/MIEZ/videos/MIEZ_8368
-  return `${VIDSY_BASE}/curation/${brand}/videos/${hash}`;
+  return url;
 }
 
 // ─── Navigate BrowserView + auto-inject file after load ────────────────────
 function navigateAndInject(filePath) {
-  if (!vidsynView) return;
+  console.log('[navigateAndInject] Started with:', filePath);
+  
+  if (!vidsynView) {
+    console.error('[navigateAndInject] BrowserView not available');
+    return;
+  }
 
   const result = extractShortHash(filePath);
+  console.log('[navigateAndInject] Hash extraction result:', result);
+  
   if (!result) {
     // Notify renderer that the filename didn't match
+    const errorMsg = 'Filename does not match the BRAND_XXXX pattern.';
+    console.warn('[navigateAndInject]', errorMsg, 'File:', filePath);
     mainWindow?.webContents.send('nav-error', {
       file: path.basename(filePath),
-      reason: 'Filename does not match the BRAND_XXXX pattern.',
+      reason: errorMsg,
     });
     return;
   }
 
   const targetUrl = buildVidsyUrl(result);
+  console.log('[navigateAndInject] Target URL:', targetUrl);
 
   // Tell the renderer about the pending navigation so the UI can update
   mainWindow?.webContents.send('nav-started', {
@@ -79,10 +99,12 @@ function navigateAndInject(filePath) {
     hash: result.hash,
   });
 
+  console.log('[navigateAndInject] Loading URL in BrowserView:', targetUrl);
   vidsynView.webContents.loadURL(targetUrl);
 
   // Once the page finishes loading, attempt the "Vibe-Check" auto-upload
   vidsynView.webContents.once('did-finish-load', () => {
+    console.log('[navigateAndInject] Page loaded, starting inject...');
     injectFileIntoUploader(filePath);
     mainWindow?.webContents.send('nav-complete', { url: targetUrl });
   });
@@ -100,13 +122,20 @@ function navigateAndInject(filePath) {
  * Because Vidsy's markup may change, we try multiple selector heuristics.
  */
 async function injectFileIntoUploader(filePath) {
-  if (!vidsynView) return;
+  console.log('[injectFileIntoUploader] Starting with:', filePath);
+  
+  if (!vidsynView) {
+    console.error('[injectFileIntoUploader] BrowserView is null!');
+    return;
+  }
+  console.log('[injectFileIntoUploader] BrowserView is available');
 
   let fileBuffer;
   try {
     fileBuffer = fs.readFileSync(filePath);
+    console.log('[injectFileIntoUploader] File read successfully, size:', fileBuffer.length);
   } catch (err) {
-    console.error('[inject] Could not read file:', err.message);
+    console.error('[injectFileIntoUploader] Could not read file:', err.message);
     mainWindow?.webContents.send('inject-error', { reason: err.message });
     return;
   }
@@ -114,6 +143,7 @@ async function injectFileIntoUploader(filePath) {
   const base64 = fileBuffer.toString('base64');
   const mimeType = filePath.endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
   const fileName = path.basename(filePath);
+  console.log('[injectFileIntoUploader] File ready for injection:', { fileName, mimeType, base64Length: base64.length });
 
   // This script runs inside Vidsy's page context
   const script = `
@@ -171,14 +201,19 @@ async function injectFileIntoUploader(filePath) {
   `;
 
   try {
+    console.log('[injectFileIntoUploader] Executing JavaScript in BrowserView...');
     const result = await vidsynView.webContents.executeJavaScript(script);
+    console.log('[injectFileIntoUploader] Script result:', result);
+    
     if (result?.ok) {
+      console.log('[injectFileIntoUploader] Success! Method:', result.method);
       mainWindow?.webContents.send('inject-success', { method: result.method, file: fileName });
     } else {
+      console.warn('[injectFileIntoUploader] Script returned error:', result?.reason);
       mainWindow?.webContents.send('inject-error', { reason: result?.reason || 'Unknown' });
     }
   } catch (err) {
-    console.error('[inject] executeJavaScript error:', err.message);
+    console.error('[injectFileIntoUploader] executeJavaScript error:', err.message);
     mainWindow?.webContents.send('inject-error', { reason: err.message });
   }
 }
@@ -241,11 +276,17 @@ function layoutBrowserView() {
 
 // ─── Create main window ──────────────────────────────────────────────────────
 function createWindow() {
+  console.log('[main] createWindow() called');
   const { width, height } = store.get('windowBounds');
   const floatOnTop = store.get('floatOnTop');
 
   // Use a dedicated persistent session so Vidsy login survives restarts
   const vidsySession = session.fromPartition(SESSION_PARTITION);
+
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('[main] Preload path:', preloadPath);
+  console.log('[main] __dirname:', __dirname);
+  console.log('[main] Dev server URL:', MAIN_WINDOW_VITE_DEV_SERVER_URL);
 
   mainWindow = new BrowserWindow({
     width,
@@ -256,22 +297,27 @@ function createWindow() {
     alwaysOnTop: floatOnTop,
     backgroundColor: '#0d0d0f',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       contextIsolation: true,   // security: isolate renderer from Node
       nodeIntegration: false,   // security: no Node in renderer
       sandbox: false,           // needed for preload to use require
     },
-    
   });
 
+  console.log('[main] BrowserWindow created');
+
   // ── Load the React renderer ──
-  // Inside createWindow()
-if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-  mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-} else {
-  // If the variable above isn't set, manually try the standard Vite port:
-  mainWindow.loadURL("http://localhost:5173"); 
-}
+  const devUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || 'http://localhost:5173';
+  console.log('[main] Loading URL:', devUrl);
+  mainWindow.loadURL(devUrl);
+  
+  mainWindow.webContents.on('did-fail-load', (error) => {
+    console.error('[main] Failed to load:', error);
+  });
+  
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[main] Renderer loaded successfully');
+  });
 
   // ── Attach BrowserView for Vidsy ──
   vidsynView = new BrowserView({
@@ -312,6 +358,12 @@ if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
 
 // Renderer drops a file onto the React drop zone
 ipcMain.on('file-dropped', (_event, { filePath }) => {
+  console.log('[main] file-dropped event received:', filePath);
+  if (!filePath) {
+    console.warn('[main] No file path provided');
+    mainWindow?.webContents.send('inject-error', { reason: 'No file path provided' });
+    return;
+  }
   navigateAndInject(filePath);
 });
 

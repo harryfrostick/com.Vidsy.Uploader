@@ -28,7 +28,7 @@ Headless Configuration: Set BrowserView dimensions to 0x0 to run the Vidsy platf
 
 Short-Hash Routing: Implement Regex (/^([A-Z]+)_(\d+)/i) to extract project IDs from filenames (e.g., MIEZ_8368).
 
-Automatic URL Construction: Programmatically build target URLs using the pattern https://app.vidsy.co/curation/[BRAND]/videos/[HASH].
+Automatic URL Construction: Programmatically build target URLs using the pattern https://app.vidsy.co/curation/[BRAND]/
 
 DOM Injection: Upon page load completion, execute a JavaScript payload to find the platform's input[type="file"] and programmatically trigger the upload.
 
